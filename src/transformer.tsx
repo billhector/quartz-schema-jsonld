@@ -14,6 +14,7 @@ const DEFAULT_BREADCRUMB_LABELS: Record<string, string> = {};
 
 const defaultOptions: SchemaJsonLdOptions = {
   typeMap: DEFAULT_TYPE_MAP,
+  mergeDefaults: true,
   enableBreadcrumbs: true,
   enableWebSite: true,
   breadcrumbFolderLabels: DEFAULT_BREADCRUMB_LABELS,
@@ -189,10 +190,15 @@ const safeJsonStringify = (obj: unknown): string =>
 export const SchemaJsonLd: QuartzTransformerPlugin<Partial<SchemaJsonLdOptions>> = (
   userOptions?: Partial<SchemaJsonLdOptions>,
 ) => {
+  const mergeDefaults = userOptions?.mergeDefaults ?? true;
+  const resolvedTypeMap: Record<string, string> = mergeDefaults
+    ? { ...DEFAULT_TYPE_MAP, ...(userOptions?.typeMap ?? {}) }
+    : { ...(userOptions?.typeMap ?? {}) };
   const opts: SchemaJsonLdOptions = {
     ...defaultOptions,
     ...userOptions,
-    typeMap: { ...DEFAULT_TYPE_MAP, ...(userOptions?.typeMap ?? {}) },
+    typeMap: resolvedTypeMap,
+    mergeDefaults,
     breadcrumbFolderLabels: {
       ...DEFAULT_BREADCRUMB_LABELS,
       ...(userOptions?.breadcrumbFolderLabels ?? {}),

@@ -35,10 +35,35 @@ export type SchemaTypeMap = Record<string, string>;
 export interface SchemaJsonLdOptions {
   /**
    * Map of frontmatter `type:` values to schema.org `@type` strings.
-   * Default: { person: "Person", project: "CreativeWork", episode: "CreativeWork",
-   * theme: "Article", bit: "Article", career: "Article" }
+   *
+   * The default mapping is shaped for an LLM-wiki/fan-encyclopedia vault
+   * (the plugin was originally built for robbylore.org, a fan wiki about
+   * a stand-up comedian — see the README for context on `bit` and other
+   * domain-specific defaults):
+   *
+   *   person  -> Person
+   *   project -> CreativeWork
+   *   episode -> CreativeWork
+   *   theme   -> Article
+   *   bit     -> Article
+   *   career  -> Article
+   *
+   * By default your custom entries are MERGED with the defaults. To use
+   * only your own mapping (and ignore the defaults entirely), also set
+   * `mergeDefaults: false`.
    */
   typeMap: SchemaTypeMap;
+
+  /**
+   * If true (default), `typeMap` is merged with the built-in defaults so
+   * you only need to specify additions or overrides. If false, the built-in
+   * defaults are dropped entirely and only your `typeMap` is used.
+   *
+   * Set to false if your vault uses an entirely different vocabulary and
+   * the defaults (which include comedy-fan-wiki shapes like `bit`) would
+   * be noise.
+   */
+  mergeDefaults: boolean;
 
   /**
    * Optional name attached to the author / about field on Article-type pages.

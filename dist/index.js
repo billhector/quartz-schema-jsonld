@@ -37,6 +37,7 @@ var DEFAULT_TYPE_MAP = {
 var DEFAULT_BREADCRUMB_LABELS = {};
 var defaultOptions = {
   typeMap: DEFAULT_TYPE_MAP,
+  mergeDefaults: true,
   enableBreadcrumbs: true,
   enableWebSite: true,
   breadcrumbFolderLabels: DEFAULT_BREADCRUMB_LABELS
@@ -122,10 +123,12 @@ function buildWebSite(baseUrl, siteName, description) {
 }
 var safeJsonStringify = (obj) => JSON.stringify(obj, null, 2).replace(/</g, "\\u003c");
 var SchemaJsonLd = (userOptions) => {
+  const mergeDefaults = userOptions?.mergeDefaults ?? true;
+  const resolvedTypeMap = mergeDefaults ? { ...DEFAULT_TYPE_MAP, ...userOptions?.typeMap ?? {} } : { ...userOptions?.typeMap ?? {} };
   const opts = {
     ...defaultOptions,
     ...userOptions,
-    typeMap: { ...DEFAULT_TYPE_MAP, ...userOptions?.typeMap ?? {} },
+    typeMap: resolvedTypeMap,
     breadcrumbFolderLabels: {
       ...DEFAULT_BREADCRUMB_LABELS,
       ...userOptions?.breadcrumbFolderLabels ?? {}

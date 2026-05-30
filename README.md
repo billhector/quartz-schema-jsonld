@@ -1,30 +1,34 @@
 # quartz-schema-jsonld
 
-A [Quartz v5](https://quartz.jzhao.xyz) plugin that emits **schema.org JSON-LD** structured data into every page's `<head>` based on each page's frontmatter `type:` field. Includes per-page `BreadcrumbList` derived from the slug path and a site-wide `WebSite` block on the homepage.
+A [Quartz v5](https://quartz.jzhao.xyz) plugin that emits **schema.org JSON-LD** structured data into every page's `<head>`. One `<script type="application/ld+json">` block per page (plus a `BreadcrumbList`), driven by each page's frontmatter `type:` field.
 
-Drop-in plugin: no markdown changes, no theme changes, no template overrides. Just enable it in `quartz.config.yaml`.
+Drop-in: no markdown changes, no theme changes, no template overrides. Add it to `quartz.config.yaml`, set a `typeMap`, done.
+
+## Origin / context
+
+This plugin was originally built for **[robbylore.org](https://robbylore.org)**, a fan-built encyclopedia about the stand-up comedian Robby Hoffman. That vault organizes content into the [LLM-wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) shape — every page declares one of these frontmatter `type:` values:
+
+| Frontmatter `type:` | Used for | Default schema.org `@type` |
+|---|---|---|
+| `person` | individuals (the subject, family, collaborators) | `Person` |
+| `project` | TV shows, podcasts, specials, films, tours | `CreativeWork` |
+| `episode` | specific episodes of podcasts/shows | `CreativeWork` |
+| `theme` | recurring topics ("money," "queerness," "family") | `Article` |
+| `bit` | recurring jokes / signature comedic material | `Article` |
+| `career` | timeline milestones, awards, controversies | `Article` |
+
+The `bit` entry is the giveaway: this defaults set is comedy-fan-wiki-shaped. **If your vault uses a different vocabulary, override `typeMap` (see below).** The plugin is fully generic — `bit` is just the default that ships, not a baked-in assumption.
 
 ## What you get
 
-For every page with `type: <something>` in frontmatter, the plugin emits an `application/ld+json` script tag with the appropriate schema.org `@type`:
+For every published page:
 
-| Frontmatter `type:` | schema.org `@type` |
-|---|---|
-| `person` | `Person` |
-| `project` | `CreativeWork` |
-| `episode` | `CreativeWork` |
-| `theme` | `Article` |
-| `bit` | `Article` |
-| `career` | `Article` |
-| *(anything else / unmapped)* | *(no entity emitted, only BreadcrumbList)* |
+- **One primary-entity JSON-LD block** whose `@type` is looked up by frontmatter `type:` in `typeMap`. Pages whose `type:` isn't in the map get no entity block — only the breadcrumb. Pages with no `type:` at all also get no entity block.
+- **One `BreadcrumbList` block** derived from the slug path. `/people/robby-hoffman` → `Home › People › Robby Hoffman`. (Disable via `enableBreadcrumbs: false`.)
+- **One `WebSite` block** on the homepage only. (Disable via `enableWebSite: false`.)
+- **Optional `about: Person`** field added to `Article`-type pages when you set `subjectName`. Useful for fan-wiki / single-subject-encyclopedia sites where every theme/bit/career page is fundamentally about one person.
 
-Override the mapping with the `typeMap` option for any other vault vocabulary.
-
-Plus:
-
-- **`BreadcrumbList`** on every non-home page, derived from the slug path. `/people/robby-hoffman` → `Home › People › Robby Hoffman`.
-- **`WebSite`** block on the homepage with `name`, `url`, `description`.
-- **`about: Person`** field added to `Article`-type pages when you set the `subjectName` option — useful for fan-wiki-style sites where every theme/bit/career page is about a single subject.
+JSON-LD is escaped to prevent script-tag breakout from frontmatter values containing `</script>` or `<!--` sequences. Validates cleanly against [Google's Rich Results Test](https://search.google.com/test/rich-results) and [schema.org validator](https://validator.schema.org/).
 
 ## Install
 
@@ -35,30 +39,82 @@ plugins:
     enabled: true
     order: 80
     options:
-      # All options are optional. Defaults shown.
+      # All options optional; defaults shown.
+      # See the "typeMap" section below for examples of customizing this.
       enableBreadcrumbs: true
       enableWebSite: true
-      typeMap:
-        person: Person
-        project: CreativeWork
-        episode: CreativeWork
-        theme: Article
-        bit: Article
-        career: Article
+      mergeDefaults: true
+      typeMap: {}
       breadcrumbFolderLabels: {}
-      # Optional: if every Article-type page is about a single subject, set this
-      # and the plugin will add `about: { @type: Person, name: ... }` to each.
-      # subjectName: "Robby Hoffman"
-      # subjectUrl: "https://robbylore.org/people/robby-hoffman"
+      # subjectName: "Your Subject Name"
+      # subjectUrl: "https://example.com/people/your-subject-slug"
 ```
 
-Then `npx quartz plugin install` to fetch.
+Then:
 
-## Options
+```
+npx quartz plugin add github:billhector/quartz-schema-jsonld
+```
+
+## Mapping frontmatter `type:` to schema.org `@type`
+
+The plugin's central knob is `typeMap` — a flat object that maps lowercase frontmatter `type:` values to schema.org `@type` strings. By default your map is **merged with** the built-in defaults, so you only have to specify additions or overrides:
+
+### Adding new mappings (merge with defaults)
+
+```yaml
+options:
+  typeMap:
+    recipe: Recipe       # appears alongside the defaults
+    event: Event
+```
+
+Now any page with `type: recipe` in frontmatter emits a `Recipe` schema, and `event` emits an `Event`. The original defaults (`person → Person`, etc.) still apply for other pages.
+
+### Overriding a default mapping
+
+```yaml
+options:
+  typeMap:
+    bit: HowTo           # override: bits now emit HowTo instead of Article
+```
+
+### Replacing the defaults entirely
+
+If the bundled defaults are noise for your vault, drop them by setting `mergeDefaults: false`:
+
+```yaml
+options:
+  mergeDefaults: false
+  typeMap:
+    article: Article
+    page: WebPage
+    person: Person
+```
+
+With `mergeDefaults: false` the plugin uses ONLY the keys you provide; nothing inherited from the defaults.
+
+### Which schema.org `@type` should I pick?
+
+Use whichever [schema.org type](https://schema.org/docs/full.html) best matches the page. Common picks:
+
+- People → `Person`
+- Articles / blog posts / theme pages → `Article`, `BlogPosting`, `NewsArticle`
+- Recipes → `Recipe`
+- Products → `Product`
+- TV shows / films / specials → `CreativeWork`, `TVSeries`, `Movie`, `PodcastSeries`
+- Events → `Event`
+- Organizations → `Organization`, `LocalBusiness`
+- Generic landing pages → `WebPage`, `CollectionPage`
+
+If you pick a sub-type Google specifically supports for rich results (e.g. `Recipe`, `Event`, `Product`), you may also need to add extra frontmatter fields to satisfy that sub-type's required properties. The plugin only emits the basics (`name`, `url`, `description`); it does not infer cuisine, prices, dates, etc. PRs welcome.
+
+## All options
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `typeMap` | `Record<string, string>` | See above | Frontmatter `type:` → schema.org `@type` mapping. Lowercase keys. Merged with defaults — you don't need to repeat the standard set. |
+| `typeMap` | `Record<string, string>` | (see Origin/context) | Lowercase frontmatter `type:` → schema.org `@type`. |
+| `mergeDefaults` | `boolean` | `true` | Merge your `typeMap` with the built-in defaults. Set to `false` to use ONLY your `typeMap`. |
 | `enableBreadcrumbs` | `boolean` | `true` | Emit `BreadcrumbList` JSON-LD on every non-home page. |
 | `enableWebSite` | `boolean` | `true` | Emit `WebSite` JSON-LD on the homepage. |
 | `subjectName` | `string` | *(undefined)* | If set, `Article`-type pages emit `about: { @type: Person, name: subjectName }`. |
@@ -73,10 +129,14 @@ After building, view the source of any page on the live site. You should see one
 
 The plugin registers a single Quartz transformer (`SchemaJsonLd`) whose `externalResources(ctx)` returns an `additionalHead` entry — a function that Quartz's `Head` component invokes per page at render time with the page's `QuartzPluginData`. The function reads `pageData.frontmatter`, `pageData.slug`, and the configured `baseUrl` / `pageTitle`, builds the appropriate schema.org objects, and returns a Preact fragment of `<script type="application/ld+json">` tags.
 
-The transformer does **not** touch markdown or HTML — only adds head resources.
+The transformer does **not** touch markdown or HTML — only adds head resources. A no-op `markdownPlugins() => []` is provided solely to satisfy Quartz's transformer-category validation, which requires a transformer instance to expose at least one of `textTransform` / `markdownPlugins` / `htmlPlugins`.
 
 JSON-LD content is escaped via `JSON.stringify` plus a `<` → `<` replacement to prevent script-tag breakout from frontmatter values containing literal `</script>` or `<!--` sequences. Consumers like Google still receive the original characters because `JSON.parse` reconstructs them client-side.
 
+## Contributing
+
+Issues + PRs welcome. The default `typeMap` is intentionally minimal — feel free to propose additions, but the design preference is to keep the defaults small and trust users to add their own vocabulary via `typeMap` overrides.
+
 ## License
 
-MIT. © Bill Hector.
+[MIT](./LICENSE). See `LICENSE` for full text.
