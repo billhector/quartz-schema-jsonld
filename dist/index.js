@@ -1,6 +1,207 @@
 import { createRequire } from 'module';
 
 createRequire(import.meta.url);
+
+// src/schema.ts
+var DEFAULT_TYPE_MAP = {
+  person: "Person",
+  project: "CreativeWork",
+  episode: "CreativeWork",
+  theme: "Article",
+  bit: "Article",
+  career: "Article"
+};
+var titleizeSlug = (slug) => slug.split("-").filter((s2) => s2.length > 0).map((s2) => s2.charAt(0).toUpperCase() + s2.slice(1)).join(" ");
+var stripIndex = (slug) => slug.replace(/\/index$/, "").replace(/^index$/, "");
+var buildPageUrl = (baseUrl, slug) => {
+  const cleanBase = baseUrl.replace(/\/$/, "");
+  const stripped = stripIndex(slug);
+  return stripped ? `https://${cleanBase}/${stripped}` : `https://${cleanBase}/`;
+};
+var isHomeSlug = (slug) => !slug || slug === "index" || slug === "/" || slug === "";
+var stripWikilink = (value) => value.replace(/^\s*\[\[/, "").replace(/\]\]\s*$/, "").trim();
+function asStringArray(value) {
+  if (typeof value === "string") return [stripWikilink(value)];
+  if (Array.isArray(value)) {
+    return value.filter((v2) => typeof v2 === "string").map(stripWikilink);
+  }
+  return [];
+}
+function pickString(frontmatter, keys) {
+  if (!frontmatter) return void 0;
+  for (const key of keys) {
+    const value = frontmatter[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return void 0;
+}
+function pickDate(frontmatter, dates, frontmatterKeys, datesKey) {
+  if (frontmatter) {
+    for (const key of frontmatterKeys) {
+      const v2 = frontmatter[key];
+      if (typeof v2 === "string" && v2.length > 0) return v2;
+      if (v2 instanceof Date) return v2.toISOString().slice(0, 10);
+    }
+  }
+  if (dates && dates[datesKey] instanceof Date) {
+    return dates[datesKey].toISOString().slice(0, 10);
+  }
+  return void 0;
+}
+function defaultOgImageUrl(baseUrl, slug) {
+  const stripped = stripIndex(slug);
+  if (!stripped) return `https://${baseUrl.replace(/\/$/, "")}/static/og-image.png`;
+  return `https://${baseUrl.replace(/\/$/, "")}/${stripped}-og-image.webp`;
+}
+function resolveImageUrl(frontmatter, baseUrl, slug, imageFromOgImage) {
+  const socialImage = pickString(frontmatter, ["socialImage"]);
+  if (socialImage) {
+    if (/^https?:\/\//.test(socialImage)) return socialImage;
+    return `https://${baseUrl.replace(/\/$/, "")}/static/${socialImage}`;
+  }
+  const image = pickString(frontmatter, ["image"]);
+  if (image && /^https?:\/\//.test(image)) return image;
+  if (imageFromOgImage) return defaultOgImageUrl(baseUrl, slug);
+  return void 0;
+}
+function buildAuthorBlock(authorValue) {
+  const names = asStringArray(authorValue);
+  if (names.length === 0) return void 0;
+  const persons = names.map((name) => ({ "@type": "Person", name }));
+  return persons.length === 1 ? persons[0] : persons;
+}
+function buildPublisherBlock(publisher) {
+  if (!publisher || !publisher.name) return void 0;
+  const block = {
+    "@type": "Organization",
+    name: publisher.name
+  };
+  if (publisher.url) block.url = publisher.url;
+  if (publisher.logo) {
+    block.logo = { "@type": "ImageObject", url: publisher.logo };
+  }
+  return block;
+}
+function buildBreadcrumbList(slug, baseUrl, siteName, folderLabels) {
+  const stripped = stripIndex(slug);
+  if (!stripped) return null;
+  const segments = stripped.split("/").filter((s2) => s2.length > 0);
+  if (segments.length === 0) return null;
+  const cleanBase = baseUrl.replace(/\/$/, "");
+  const items = [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: siteName,
+      item: `https://${cleanBase}/`
+    }
+  ];
+  let cumulative = "";
+  segments.forEach((segment, index) => {
+    cumulative = cumulative ? `${cumulative}/${segment}` : segment;
+    const labelOverride = folderLabels[segment];
+    const name = labelOverride ?? titleizeSlug(segment);
+    items.push({
+      "@type": "ListItem",
+      position: index + 2,
+      name,
+      item: `https://${cleanBase}/${cumulative}`
+    });
+  });
+  return {
+    "@type": "BreadcrumbList",
+    itemListElement: items
+  };
+}
+function buildEntity(pageData, baseUrl, opts) {
+  const frontmatter = pageData.frontmatter;
+  if (!frontmatter) return null;
+  if (frontmatter.schemaDisabled === true) return null;
+  const explicitType = pickString(frontmatter, ["schemaType"]);
+  const rawType = typeof frontmatter.type === "string" ? frontmatter.type.toLowerCase() : "";
+  const schemaType = explicitType ?? opts.typeMap[rawType];
+  if (!schemaType) return null;
+  const slug = pageData.slug ?? "";
+  const title = pickString(frontmatter, ["title"]) ?? titleizeSlug(stripIndex(slug).split("/").pop() ?? "");
+  const description = pickString(frontmatter, ["description", "socialDescription"]);
+  const pageUrl = buildPageUrl(baseUrl, slug);
+  const base = {
+    "@type": schemaType,
+    name: title,
+    url: pageUrl
+  };
+  if (description) base.description = description;
+  const image = resolveImageUrl(frontmatter, baseUrl, slug, opts.imageFromOgImage);
+  if (image) base.image = image;
+  const sameAs = asStringArray(frontmatter.sameAs);
+  if (sameAs.length > 0) base.sameAs = sameAs;
+  const author = buildAuthorBlock(frontmatter.author);
+  if (author !== void 0) base.author = author;
+  const datePublished = pickDate(
+    frontmatter,
+    pageData.dates,
+    ["datePublished", "published"],
+    "created"
+  );
+  if (datePublished) base.datePublished = datePublished;
+  const dateModified = pickDate(
+    frontmatter,
+    pageData.dates,
+    ["dateModified", "modified"],
+    "modified"
+  );
+  if (dateModified) base.dateModified = dateModified;
+  if (schemaType === "Article") {
+    base.headline = title;
+    if (opts.subjectName) {
+      base.about = opts.subjectUrl ? { "@type": "Person", name: opts.subjectName, url: opts.subjectUrl } : { "@type": "Person", name: opts.subjectName };
+    }
+    const pub = buildPublisherBlock(opts.publisher);
+    if (pub) base.publisher = pub;
+  }
+  return base;
+}
+function buildWebSite(baseUrl, siteName, description) {
+  const obj = {
+    "@type": "WebSite",
+    name: siteName,
+    url: `https://${baseUrl.replace(/\/$/, "")}/`
+  };
+  if (description) obj.description = description;
+  return obj;
+}
+function resolveTypeMap(userTypeMap, mergeDefaults) {
+  return mergeDefaults ? { ...DEFAULT_TYPE_MAP, ...userTypeMap ?? {} } : { ...userTypeMap ?? {} };
+}
+function composeBlocks(pageData, baseUrl, siteName, opts) {
+  const slug = pageData.slug ?? "";
+  const isHome = isHomeSlug(slug);
+  const blocks = [];
+  if (isHome) {
+    if (opts.enableWebSite) {
+      const desc = pickString(pageData.frontmatter, ["description"]);
+      blocks.push(buildWebSite(baseUrl, siteName, desc));
+    }
+    const pub = buildPublisherBlock(opts.publisher);
+    if (pub) blocks.push(pub);
+  } else {
+    const entity = buildEntity(pageData, baseUrl, opts);
+    if (entity) blocks.push(entity);
+    if (opts.enableBreadcrumbs) {
+      const crumbs = buildBreadcrumbList(slug, baseUrl, siteName, opts.breadcrumbFolderLabels);
+      if (crumbs) blocks.push(crumbs);
+    }
+  }
+  return blocks;
+}
+function wrapBlocks(blocks, useGraph) {
+  if (blocks.length === 0) return [];
+  if (useGraph) {
+    return [{ "@context": "https://schema.org", "@graph": blocks }];
+  }
+  return blocks.map((b) => ({ "@context": "https://schema.org", ...b }));
+}
+var safeJsonStringify = (obj) => JSON.stringify(obj, null, 2).replace(/</g, "\\u003c");
 var l;
 function k(n2) {
   return n2.children;
@@ -26,109 +227,22 @@ function u2(e2, t2, n2, o2, i2, u3) {
 }
 
 // src/transformer.tsx
-var DEFAULT_TYPE_MAP = {
-  person: "Person",
-  project: "CreativeWork",
-  episode: "CreativeWork",
-  theme: "Article",
-  bit: "Article",
-  career: "Article"
-};
 var DEFAULT_BREADCRUMB_LABELS = {};
 var defaultOptions = {
   typeMap: DEFAULT_TYPE_MAP,
   mergeDefaults: true,
   enableBreadcrumbs: true,
   enableWebSite: true,
-  breadcrumbFolderLabels: DEFAULT_BREADCRUMB_LABELS
+  breadcrumbFolderLabels: DEFAULT_BREADCRUMB_LABELS,
+  imageFromOgImage: true,
+  useGraph: true
 };
-var titleizeSlug = (slug) => slug.split("-").filter((s2) => s2.length > 0).map((s2) => s2.charAt(0).toUpperCase() + s2.slice(1)).join(" ");
-var stripIndex = (slug) => slug.replace(/\/index$/, "").replace(/^index$/, "");
-var buildUrl = (baseUrl, slug) => {
-  const stripped = stripIndex(slug);
-  const path = stripped ? `/${stripped}` : "/";
-  return `https://${baseUrl.replace(/\/$/, "")}${path}`;
-};
-function buildBreadcrumbList(slug, baseUrl, siteName, folderLabels) {
-  const stripped = stripIndex(slug);
-  if (!stripped) return null;
-  const segments = stripped.split("/").filter((s2) => s2.length > 0);
-  if (segments.length === 0) return null;
-  const items = [
-    {
-      "@type": "ListItem",
-      position: 1,
-      name: siteName,
-      item: `https://${baseUrl.replace(/\/$/, "")}/`
-    }
-  ];
-  let cumulative = "";
-  segments.forEach((segment, index) => {
-    cumulative = cumulative ? `${cumulative}/${segment}` : segment;
-    const labelOverride = folderLabels[segment];
-    const name = labelOverride ?? titleizeSlug(segment);
-    items.push({
-      "@type": "ListItem",
-      position: index + 2,
-      name,
-      item: `https://${baseUrl.replace(/\/$/, "")}/${cumulative}`
-    });
-  });
-  return {
-    "@context": "https://schema.org",
-    "@type": "BreadcrumbList",
-    itemListElement: items
-  };
-}
-function buildEntity(frontmatter, slug, baseUrl, opts) {
-  if (!frontmatter) return null;
-  const rawType = typeof frontmatter.type === "string" ? frontmatter.type.toLowerCase() : "";
-  const schemaType = opts.typeMap[rawType];
-  if (!schemaType) return null;
-  const title = typeof frontmatter.title === "string" && frontmatter.title.length > 0 ? frontmatter.title : titleizeSlug(stripIndex(slug).split("/").pop() ?? "");
-  const description = typeof frontmatter.description === "string" && frontmatter.description.length > 0 ? frontmatter.description : void 0;
-  const pageUrl = buildUrl(baseUrl, slug);
-  const base = {
-    "@context": "https://schema.org",
-    "@type": schemaType,
-    name: title,
-    url: pageUrl
-  };
-  if (description) {
-    base.description = description;
-  }
-  if (schemaType === "Article" && opts.subjectName) {
-    base.headline = title;
-    if (opts.subjectUrl) {
-      base.about = {
-        "@type": "Person",
-        name: opts.subjectName,
-        url: opts.subjectUrl
-      };
-    } else {
-      base.about = { "@type": "Person", name: opts.subjectName };
-    }
-  }
-  return base;
-}
-function buildWebSite(baseUrl, siteName, description) {
-  const obj = {
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    name: siteName,
-    url: `https://${baseUrl.replace(/\/$/, "")}/`
-  };
-  if (description) obj.description = description;
-  return obj;
-}
-var safeJsonStringify = (obj) => JSON.stringify(obj, null, 2).replace(/</g, "\\u003c");
 var SchemaJsonLd = (userOptions) => {
-  const mergeDefaults = userOptions?.mergeDefaults ?? true;
-  const resolvedTypeMap = mergeDefaults ? { ...DEFAULT_TYPE_MAP, ...userOptions?.typeMap ?? {} } : { ...userOptions?.typeMap ?? {} };
   const opts = {
     ...defaultOptions,
     ...userOptions,
-    typeMap: resolvedTypeMap,
+    typeMap: resolveTypeMap(userOptions?.typeMap, userOptions?.mergeDefaults ?? true),
+    mergeDefaults: userOptions?.mergeDefaults ?? true,
     breadcrumbFolderLabels: {
       ...DEFAULT_BREADCRUMB_LABELS,
       ...userOptions?.breadcrumbFolderLabels ?? {}
@@ -145,35 +259,20 @@ var SchemaJsonLd = (userOptions) => {
     externalResources(ctx) {
       const cfg = ctx.cfg.configuration;
       const baseUrl = cfg.baseUrl;
-      if (!baseUrl) {
-        return {};
-      }
+      if (!baseUrl) return {};
       const siteName = cfg.pageTitle ?? "";
       return {
         additionalHead: [
           (pageData) => {
-            const slug = pageData.slug ?? "";
-            const frontmatter = pageData.frontmatter;
-            const isHome = !slug || slug === "index" || slug === "/";
-            const blocks = [];
-            if (isHome && opts.enableWebSite) {
-              const desc = typeof frontmatter?.description === "string" ? frontmatter.description : void 0;
-              blocks.push(buildWebSite(baseUrl, siteName, desc));
-            } else {
-              const entity = buildEntity(frontmatter, slug, baseUrl, opts);
-              if (entity) blocks.push(entity);
-              if (opts.enableBreadcrumbs) {
-                const crumbs = buildBreadcrumbList(
-                  slug,
-                  baseUrl,
-                  siteName,
-                  opts.breadcrumbFolderLabels
-                );
-                if (crumbs) blocks.push(crumbs);
-              }
-            }
-            if (blocks.length === 0) return null;
-            return /* @__PURE__ */ u2(k, { children: blocks.map((block, idx) => /* @__PURE__ */ u2(
+            const blocks = composeBlocks(
+              pageData,
+              baseUrl,
+              siteName,
+              opts
+            );
+            const wrapped = wrapBlocks(blocks, opts.useGraph);
+            if (wrapped.length === 0) return null;
+            return /* @__PURE__ */ u2(k, { children: wrapped.map((block, idx) => /* @__PURE__ */ u2(
               "script",
               {
                 type: "application/ld+json",
@@ -188,6 +287,6 @@ var SchemaJsonLd = (userOptions) => {
   };
 };
 
-export { SchemaJsonLd };
+export { DEFAULT_TYPE_MAP, SchemaJsonLd, buildBreadcrumbList, buildEntity, buildPublisherBlock, buildWebSite, composeBlocks, resolveTypeMap, safeJsonStringify, titleizeSlug, wrapBlocks };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

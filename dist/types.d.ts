@@ -12,6 +12,18 @@ export { BuildCtx, CSSResource, ChangeEvent, JSResource, PageGenerator, PageMatc
  * Override per site by passing the `typeMap` option.
  */
 type SchemaTypeMap = Record<string, string>;
+/**
+ * Publisher/Organization info attached to Article-type pages and emitted as a
+ * standalone Organization block on the homepage.
+ */
+interface PublisherOptions {
+    /** Organization name. Required for the block to be emitted. */
+    name: string;
+    /** Organization URL. Defaults to the site's baseUrl. */
+    url?: string;
+    /** Absolute URL of an ImageObject (e.g. site logo). Optional. */
+    logo?: string;
+}
 interface SchemaJsonLdOptions {
     /**
      * Map of frontmatter `type:` values to schema.org `@type` strings.
@@ -37,25 +49,11 @@ interface SchemaJsonLdOptions {
      * If true (default), `typeMap` is merged with the built-in defaults so
      * you only need to specify additions or overrides. If false, the built-in
      * defaults are dropped entirely and only your `typeMap` is used.
-     *
-     * Set to false if your vault uses an entirely different vocabulary and
-     * the defaults (which include comedy-fan-wiki shapes like `bit`) would
-     * be noise.
      */
     mergeDefaults: boolean;
     /**
-     * Optional name attached to the author / about field on Article-type pages.
-     * Useful for fan-wiki-style sites where every page is about a single subject.
-     * If unset, the schema omits author/about.
-     */
-    subjectName?: string;
-    /**
-     * Optional URL of the subject (e.g. the canonical hub page on the same site).
-     */
-    subjectUrl?: string;
-    /**
      * Emit a BreadcrumbList JSON-LD block derived from the page slug.
-     * Defaults to true. Disable only if you have multiple breadcrumb sources.
+     * Defaults to true.
      */
     enableBreadcrumbs: boolean;
     /**
@@ -64,11 +62,45 @@ interface SchemaJsonLdOptions {
      */
     enableWebSite: boolean;
     /**
+     * Optional name attached to the `about` field on Article-type pages.
+     * Useful for fan-wiki-style sites where every page is about a single subject.
+     */
+    subjectName?: string;
+    /**
+     * Optional URL of the subject (e.g. the canonical hub page on the same site).
+     */
+    subjectUrl?: string;
+    /**
      * Folder slug -> friendly type-folder name for breadcrumb labels.
      * If a slug like "people" isn't in this map, the plugin falls back to a
      * Title-Case version of the slug ("people" -> "People").
      */
     breadcrumbFolderLabels: Record<string, string>;
+    /**
+     * Publisher/Organization info. When set:
+     *   - the homepage emits a standalone Organization block alongside WebSite
+     *   - every Article-type page gets a `publisher` field pointing at it
+     * If unset, no publisher is emitted.
+     */
+    publisher?: PublisherOptions;
+    /**
+     * If true (default), the plugin auto-fills the `image` field for entity
+     * blocks using the auto-generated OG image path emitted by the
+     * `quartz-community/og-image` plugin (`<baseUrl>/<slug>-og-image.webp`).
+     *
+     * A page can still override the image by setting `socialImage` or `image`
+     * in its frontmatter.
+     *
+     * Set to false to skip auto-population — only frontmatter `image`/`socialImage`
+     * will produce an `image` field then.
+     */
+    imageFromOgImage: boolean;
+    /**
+     * Consolidate all per-page JSON-LD blocks into a single `<script>` tag
+     * using a `@graph` array. Defaults to true. Set to false to emit each block
+     * in its own script tag.
+     */
+    useGraph: boolean;
 }
 
-export type { SchemaJsonLdOptions, SchemaTypeMap };
+export type { PublisherOptions, SchemaJsonLdOptions, SchemaTypeMap };
