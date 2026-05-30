@@ -201,6 +201,12 @@ export const SchemaJsonLd: QuartzTransformerPlugin<Partial<SchemaJsonLdOptions>>
 
   return {
     name: "SchemaJsonLd",
+    // No-op markdownPlugins satisfies Quartz's transformer-category validation
+    // (a transformer must expose at least one of textTransform / markdownPlugins
+    // / htmlPlugins). The actual work happens in externalResources below.
+    markdownPlugins() {
+      return [];
+    },
     externalResources(ctx) {
       const cfg = ctx.cfg.configuration;
       const baseUrl = cfg.baseUrl;
